@@ -1,0 +1,286 @@
+clc
+clear all
+
+limtime = 10;
+alltime = 0;
+delta_t = 1e-6;
+
+% container porperties
+n = 7;
+container_radius = 10;
+container_radiusofswing = 2000;
+omega_c = 0;
+container_frequency = 0.1;
+radius = 1;
+mass = 0.05;
+
+% container parameter
+totalrotation = 0;
+
+% contact force parameter
+young_modulus = 1e9;
+poisson_cof = 0.25;
+hertz_daming_cof = 0.5;
+
+wall_young_modulus = 1e9;
+wall_poisson_cof = 0.25;
+wall_hertz_daming_cof = 0.5;
+
+% friction force parameter
+friction_compliment = 1e15;
+static_mue_b = 1;
+static_mue_w = 1;
+kinetic_mue_b = 1;
+kinetic_mue_w = 1;
+
+% physics constants
+worldSize = [10 10]; % [m]
+
+% render setting
+isrenderline = true;
+isrendercircle = true;
+pauseiteration = 0;
+renderhertz = 10000;
+centiapply = false;
+
+
+ball_contactforce_constant = 4/3 * sqrt(radius/2) * young_modulus/(2*(1- poisson_cof * poisson_cof));
+
+initial_position = closepacking_initial(n);
+
+ballarr = ball(initial_position(1),radius,mass);
+for i = 2:n
+    ballarr(i) = ball(initial_position(i,:)*2*radius,radius,mass);
+end
+
+% set up GUI
+fig = figure('Name', 'Example 1: Ball stack', 'Units', 'normalized', 'Position', [0.2 0.2 0.6 0.6]);
+
+% axes
+set(gca, 'OuterPosition', [0.1 0.2 0.8 0.8])
+axis([-10 worldSize(1) -10 worldSize(2)])
+axis square
+axis off
+
+% outer render
+diameter = container_radius*2;
+outerline = rectangle('Position',[-container_radius,-container_radius,diameter,diameter],'Curvature',[1,1],'EdgeColor', 'black');
+
+%balltemp = line([ballarr(1).position(1),ballarr(1).position(1)] , [-ballarr(1).position(2),ballarr(1).position(2)], 'color', 'black');
+
+% circles
+graphics = gobjects(n);
+linegraphic = gobjects(n);
+
+for circle = 1:n % skip edges
+	diameter = 2*radius;
+	temp = ballarr(circle).position(1,1:2) - radius;
+
+	position = [temp(1) temp(2) diameter diameter];
+    graphics(circle) = rectangle('Position', position, 'Curvature', [1 1], 'EdgeColor', 'black', 'FaceColor', [0.75 + rand()*0.25 0.0 0.0]); % circles are drawn as squares with curved corners
+end
+
+
+
+while alltime < limtime
+
+    forcevector = zeros(n,3);
+    torqueforcevector = zeros(n,3);
+    
+    % O(n^2) solution; naive compare
+    for idx = 1:n
+
+        if centiapply == true
+        
+            % centifugal force calculation
+            % centifugal normal direction
+            centifugal_direcvec = [cos(totalrotation),-sin(totalrotation),0];
+            centifugal_direcvec = centifugal_direcvec/magnitude(centifugal_direcvec);
+    
+            totalrotation = totalrotation + 2 * pi * delta_t * container_frequency;
+            
+            if totalrotation > 2 * pi
+                totalrotation = totalrotation - 2*pi;
+            end
+            
+            % apply centifugal
+            forcevector(idx,:) = forcevector(idx,:) + mass * (2 * pi * container_frequency)^2 * container_radiusofswing * centifugal_direcvec;
+
+        end
+
+        if magnitude(ballarr(idx).position) + radius > container_radius
+            
+            % direction vector (x -> wall)
+            direcvec = -ballarr(idx).position/magnitude(ballarr(idx).position);
+    
+            % overlap parameter
+            overlap = magnitude(ballarr(idx).position) + radius - container_radius;
+            
+            % young modulus effectiveness
+            young_modulus_effectiveness = 1/(((1-poisson_cof^2)/young_modulus + (1-wall_poisson_cof^2)/wall_young_modulus));
+            
+            % contact force
+            contactforce = 4/3 * sqrt(radius) * young_modulus_effectiveness * sqrt(overlap^3);
+    
+            contactarea = pi * radius/2 * overlap;
+                
+            vRel = -(ballarr(idx).velocity + cross(ballarr(idx).angular_velocity, radius * direcvec));
+    
+            vRelt = vRel - (dot(vRel, direcvec)) * -direcvec;  
+            
+            % friction torque direction (x -> y)
+            tDirection = vRelt/magnitude(vRelt);
+            
+            friction_condition = friction_compliment * magnitude(vRelt) * contactarea * delta_t;
+    
+            if friction_condition < static_mue_w * contactforce
+                frictionforce = friction_condition;
+            else
+                frictionforce = kinetic_mue_w * contactforce;
+            end 
+    
+            % damping calculation
+            vReln = dot(vRel,direcvec) * direcvec;
+    
+            dampingforce = 2*hertz_daming_cof * sqrt(young_modulus/(1 - poisson_cof * poisson_cof) * ballarr(idx).mass/2) * (radius/2 * overlap)^(1/4);
+            
+            % apply force
+            Fi = contactforce * direcvec + dampingforce * vReln ;
+    
+            fi = frictionforce * cross((radius - overlap/2) * direcvec, tDirection);
+
+            % apply force
+            forcevector(idx,:) = forcevector(idx,:) + Fi;
+            
+            % friction angular momentum calculation
+            torqueforcevector(idx,:) = torqueforcevector(idx,:) + fi;
+
+        end
+            
+        for idy = (idx+1):n
+            
+            % distance size
+            dis = magnitude(ballarr(idx).position - ballarr(idy).position);
+
+            if dis < 2*radius
+
+                Fi = 0;
+                Fj = 0;
+                
+                % normal direction (y -> x)
+                direcvec = (ballarr(idx).position - ballarr(idy).position)/dis;
+                
+                % overlap parameter
+                overlap = 2*radius - dis;
+                
+                % contact force (scalar)
+                contactforce =  ball_contactforce_constant * sqrt(overlap^3);
+            
+                % friction force computation
+                % contact area parameter
+                contactarea = pi * radius/2 * overlap;
+                
+                vPi = ballarr(idx).velocity + cross(ballarr(idx).angular_velocity, radius * -direcvec);
+                vPj = ballarr(idy).velocity + cross(ballarr(idy).angular_velocity, radius * direcvec);
+            
+                vRel = vPj - vPi;
+
+                vReln = dot(vRel,direcvec) * direcvec;
+                
+                vPit = vPi - (dot(vPi, direcvec)) * direcvec;
+                vPjt = vPj - (dot(vPj, direcvec)) * direcvec;
+
+                vRelt = vPjt - vPit;  
+
+                if magnitude(vRelt) ~= 0
+
+                    tDirection = vRelt/magnitude(vRelt);
+                    
+                    friction_condition = friction_compliment * magnitude(vRelt) * contactarea * delta_t;
+                    
+                    frictionforce = 0;
+                
+                    if friction_condition < static_mue_b * contactforce
+                        frictionforce = friction_condition;
+                    else
+                        frictionforce = kinetic_mue_b * contactforce;
+                    end
+                    
+                    % friction force acting to ball calculation
+                    %Fi = Fi + tDirection * frictionforce;
+                    %Fj = Fj + -tDirection * frictionforce;
+                
+                    % friction angular momentum calculation
+                    fi = frictionforce * cross((radius - overlap/2) * direcvec, tDirection);
+                    fj = frictionforce * -cross((radius - overlap/2) * direcvec, tDirection);
+                    
+                    % apply fiction angular momentum
+                    torqueforcevector(idx,:) = torqueforcevector(idx,:) + fi;
+                    torqueforcevector(idy,:) = torqueforcevector(idy,:) + fj;
+
+                end
+
+                % damping calculation
+                vReln = dot(vRel,direcvec) * direcvec;
+            
+                dampingforce = 2*hertz_daming_cof * sqrt(young_modulus/(1- poisson_cof * poisson_cof) * mass/2) * (radius/2 * overlap)^(1/4);
+
+                % apply force
+                Fi = Fi + contactforce * direcvec + dampingforce * vReln;
+                Fj = Fj + contactforce * -direcvec + dampingforce * -vReln;
+                
+                % apply force
+                forcevector(idx,:) = forcevector(idx,:) + Fi;
+                forcevector(idy,:) = forcevector(idy,:) + Fj;
+                
+            end
+        end
+    end
+     
+    for iter = 1:n
+        ballarr(iter) = applyforce(ballarr(iter),forcevector(iter,:),torqueforcevector(iter,:),delta_t);
+    end
+    
+    alltime = alltime + delta_t;
+
+    if pauseiteration == renderhertz
+        pauseiteration = 0;
+        % ball render
+        for circle = 1:n % skip edges
+            diameter = 2*radius;
+	        temp = ballarr(circle).position(1,1:2) - radius;
+        
+	        position = [temp(1) temp(2) diameter diameter];
+            set(graphics(circle), 'Position', position);
+        end
+        
+        % line render
+        if isrenderline == true
+    
+            delete(linegraphic);
+            linegraphic = gobjects(n);
+    
+            for circle = 1:n 
+                rotated = ballarr(circle).rotation;
+                position = ballarr(circle).position;
+                xconst = radius*cos(rotated(3));
+                yconst = radius*sin(rotated(3));
+                linegraphic(circle) = line(position(1) + [-xconst, xconst], position(2) + [-yconst,yconst], 'color', 'black');
+    
+            end
+    
+        end
+        pause(0.01);
+
+    else
+        pauseiteration = pauseiteration + 1;
+
+    end
+       
+    %delete(balltemp)
+    %balltemp = line([ballarr(1).position(1) - radius,ballarr(1).position(1) + radius] , [ballarr(1).position(2),ballarr(1).position(2)], 'color', 'black');
+    
+    
+    
+end
+    

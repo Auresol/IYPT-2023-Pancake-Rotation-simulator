@@ -1,0 +1,128 @@
+function [Fi,Fj,fi,fj] = contactforce_ball(ball1,ball2,iswall,delta_t)
+
+    % contact force parameter
+    young_modulus = 10e6;
+    poisson_cof = 0.25;
+    hertz_daming_cof = 0.04;
+    material_parameter = 2;
+    
+    wall_young_modulus = 10e6;
+    wall_poisson_cof = 0.25;
+    wall_hertz_daming_cof = 0.04;
+    
+    % friction force parameter
+    friction_compliment = 10e3;
+    static_mue_b = 0.5;
+    static_mue_w = 0.5;
+    kinetic_mue_b = 0.5;
+    kinetic_mue_w = 0.5;
+
+    container_radius = 10;
+
+    ball_contactforce_constant = 4/3 * sqrt(ball1.radius/2) * young_modulus/(2*(1- poisson_cof * poisson_cof));
+    
+    if iswall == false
+
+        radius = ball1.radius;
+    
+        dis = magnitude(ball1.position - ball2.position);
+    
+        % normal direction (y -> x)
+        direcvec = (ball1.position - ball2.position)/dis;
+        
+        % overlap parameter
+        overlap = (ball1.radius + ball2.radius) - dis;
+        
+        % contact force (scalar)
+        contactforce =  ball_contactforce_constant * sqrt(overlap^3);
+    
+        % friction force computation
+        % contact area parameter
+        contactarea = pi * ball1.radius/2 * overlap;
+        
+        vPi = ball1.velocity + cross(ball1.angular_velocity, ball1.radius * -direcvec);
+        vPj = ball2.velocity + cross(ball2.angular_velocity, ball2.radius * direcvec);
+    
+        vRel = vPj - vPi;
+    
+        vPit = vPi - (dot(vPi, direcvec)) * direcvec;
+        vPjt = vPj - (dot(vPj, -direcvec)) * -direcvec;
+    
+        vRelt = vPjt - vPit;               
+        tDirection = vRelt/magnitude(vRelt);
+    
+        % friction torque direction (x -> y)
+        frictiontorquevec = vRelt/magnitude(vRelt);
+        
+        friction_condition = friction_compliment * magnitude(vPit-vPjt) * contactarea * delta_t;
+        
+        frictionforce = 0;
+    
+        if friction_condition < static_mue_b * magnitude(contactforce)
+            frictionforce = friction_condition;
+        else
+            frictionforce = kinetic_mue_b * contactforce;
+        end
+    
+        % damping calculation
+        vReln = dot(vRel,direcvec) * direcvec;
+    
+        dampingforce = 2*hertz_daming_cof * sqrt(young_modulus/(1- poisson_cof * poisson_cof) * ball1.mass/2) * (radius/2 * overlap)^(1/4);
+    
+        % apply force
+        Fi = contactforce * direcvec + dampingforce * vReln;
+        Fj = contactforce * -direcvec + dampingforce * -vReln;
+        
+        % friction angular momentum calculation
+        fi = frictionforce * cross(tDirection, (radius - overlap/2) * direcvec);
+        fj = frictionforce * cross(-tDirection, (radius - overlap/2) * -direcvec);
+    
+    else
+        
+        radius = ball1.radius;
+        position = ball1.position;
+
+        % direction vector (x -> wall)
+        direcvec = -position/magnitude(position);
+
+        % overlap parameter
+        overlap = magnitude(position) + radius - container_radius;
+        
+        % young modulus effectiveness
+        young_modulus_effectiveness = 1/(((1-poisson_cof^2)/young_modulus + (1-wall_poisson_cof^2)/wall_young_modulus));
+        
+        % contact force
+        contactforce = 4/3 * sqrt(radius) * young_modulus_effectiveness * sqrt(overlap^3) * direcvec;
+
+        contactarea = pi * radius/2 * overlap;
+            
+        vRel = -(ball1.velocity + cross(ball1.angular_velocity, radius * direcvec));
+
+        vRelt = vRel - (dot(vRel, direcvec)) * -direcvec;  
+
+        tDirection = vRelt/magnitude(vRelt);
+
+        % friction torque direction (x -> y)
+        frictiontorquevec = vRelt/magnitude(vRelt);
+        
+        friction_condition = friction_compliment * magnitude(vRelt) * contactarea * delta_t;
+
+        if friction_condition < static_mue_w * magnitude(contactforce)
+            frictionforce = friction_condition;
+        else
+            frictionforce = kinetic_mue_w * contactforce;
+        end 
+
+        % damping calculation
+        vReln = dot(vRel,direcvec) * direcvec;
+
+        dampingforce = 2*hertz_daming_cof * sqrt(young_modulus/(1 - poisson_cof * poisson_cof) * ball1.mass/2) * (radius/2 * overlap)^(1/4);
+        
+        % apply force
+        Fi = contactforce * direcvec + dampingforce * vReln;
+
+        fi = frictionforce * cross(tDirection, (radius - overlap/2) * direcvec);
+    end
+
+end
+
