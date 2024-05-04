@@ -14,13 +14,27 @@ There's many folders in this repository, I can't remember which one does what, I
 
 ## Example
 Transition state
+
+
 https://github.com/Auresol/IYPT-2023-Pancake-Rotation-simulator/assets/64572955/a3cf85ff-4159-410a-8662-88df9a5065c5
 
+
+
 Counter-rotation state
+
+
+
 https://github.com/Auresol/IYPT-2023-Pancake-Rotation-simulator/assets/64572955/9201a4eb-0386-4c86-b745-49d8c34544b5
 
+
+
 M frame
+
+
+
 https://github.com/Auresol/IYPT-2023-Pancake-Rotation-simulator/assets/64572955/6171ed5e-6d4d-4f5d-aa08-6b6d16bf7729
+
+
 
 Difference outcome can be archive by tuning the parameter
 
