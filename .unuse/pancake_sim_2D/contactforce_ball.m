@@ -1,0 +1,94 @@
+function [Fi,Fj,fi,fj] = contactforce_ball(ball1,ball2,delta_t)
+    
+    % --------------------------- %
+    % friction force parameter
+    friction_compliment = 1e15;
+    static_mue_b = 0.1;
+    kinetic_mue_b = 0.1;
+    % --------------------------- %
+    
+    Fi = [0,0,0];
+    Fj = [0,0,0];
+    fi = [0,0,0];
+    fj = [0,0,0];
+
+    % contact force calculation
+    % distance magnitude
+    dis = magnitude(ball1.position - ball2.position);
+
+    % normal direction (y -> x) (ij)
+    direcvec = (ball1.position - ball2.position)/dis;
+    
+    % overlap parameter
+    overlap = (ball1.radius + ball2.radius) - dis;
+
+    % R_effective
+    radius_effective = 1/(1/ball1.radius + 1/ball2.radius);
+
+    % E_effective
+    young_modulus_effective = 1/( (1 - ball1.poisson_cof^2)/ball1.young_modulus + (1 - ball2.poisson_cof ^ 2)/ball2.young_modulus );
+
+    % contact area parameter
+    contactarea = pi * radius_effective/2 * overlap;
+    
+    % contact force (scalar)
+    contactforce =  4/3 * sqrt(radius_effective/2) * young_modulus_effective * sqrt(overlap^3);
+
+    % friction force computation
+    % surface velocity
+    vPi = ball1.velocity + cross(ball1.angular_velocity, ball1.radius * -direcvec);
+    vPj = ball2.velocity + cross(ball2.angular_velocity, ball2.radius * direcvec);
+
+    vRel = vPj - vPi;
+
+    vPit = vPi - (dot(vPi, direcvec)) * direcvec;
+    vPjt = vPj - (dot(vPj, direcvec)) * direcvec;
+
+    vRelt = vPjt - vPit;      
+
+    if magnitude(vRelt) ~= 0
+
+        % friction direcvec
+        tDirection = vRelt/magnitude(vRelt);
+        
+        % dynamic friction condition
+        friction_condition = friction_compliment * magnitude(vRelt) * contactarea * delta_t;
+        
+        frictionforce = 0;
+    
+        if friction_condition < static_mue_b * contactforce
+            frictionforce = friction_condition;
+        else
+            frictionforce = kinetic_mue_b * contactforce;
+        end
+
+        % apply friction angular momentum
+        fi = fi + cross(-direcvec * ball1.radius, frictionforce * tDirection);
+        fj = fj + cross(direcvec * ball2.radius, frictionforce * -tDirection);
+        
+        % apply friction force
+        Fi = Fi + frictionforce * tDirection;
+        Fj = Fj + frictionforce * -tDirection;
+
+    end
+
+    % damping calculation
+    % relative speed at surface
+    vReln = dot(vRel,direcvec) * direcvec;
+
+    % mass_effective
+    mass_effective = 1/(1/ball1.mass + 1/ball2.mass);
+
+    % damping_coefficient_effective
+    damping_effective = (ball1.young_modulus * ball1.damping_cof + ball2.young_modulus * ball2.damping_cof)/(ball1.young_modulus + ball2.young_modulus);
+    
+    % damping force
+    dampingforce = 2*damping_effective * sqrt(2 * young_modulus_effective * mass_effective) * (radius_effective * overlap)^(1/4);
+
+    % apply force
+    Fi = Fi + contactforce * direcvec + dampingforce * vReln;
+    Fj = Fj + contactforce * -direcvec + dampingforce * -vReln;
+    
+
+end
+
