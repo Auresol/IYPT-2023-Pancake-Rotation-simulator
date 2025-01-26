@@ -1,5 +1,5 @@
 # IYPT 2023 Pancake Rotation simulation
-**The most resourse intensive and inaacurate simulation of the IYPT 2023 problem "Pancake Rotation". (Just kidding, it's not that bad)**
+**The simulation of the IYPT 2023 problem: "Pancake Rotation"**
 
 This is my personal work on a simulation of the IYPT 2023 problem "Pancake Rotation". The problem statement can be found [here](https://www.iypt.org/problems/problems-for-the-36th-iypt-2023/).
 
